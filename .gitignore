@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+.sixth/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project Specific
+logs/
+*.log
+backtest_trades.csv
+backtest_analysis.png
+temp/
+tmp/
