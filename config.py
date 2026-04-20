@@ -22,6 +22,16 @@ MT5_HTF       = "M30"            # Higher timeframe for EMA bias
 MT5_BARS      = 1500              # Bars to fetch for feature warm-up
 MT5_HTF_BARS  = 1500              # HTF bars
 
+# VISION WEBSOCKET
+VISION_ENABLED = True
+VISION_WS_URL = "wss://api.ruthwestlimited.com/vision_deriv/ws/signals"
+VISION_TIMEFRAME = "M1"
+VISION_TIMEFRAMES = [VISION_TIMEFRAME]  # Add more timeframes here, e.g. ["M1", "M5"]
+VISION_RECONNECT_SECONDS = 5
+VISION_SOCKET_TIMEOUT = 5
+VISION_MAX_SIGNAL_AGE_SECONDS = 120
+VISION_REQUIRE_FRESH_SIGNAL = True
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  FEATURE ENGINEERING  (must match notebook exactly)
 # ─────────────────────────────────────────────────────────────────────────────

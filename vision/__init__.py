@@ -1,0 +1,1 @@
+"""Vision websocket integration package."""

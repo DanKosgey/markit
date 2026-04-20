@@ -12,6 +12,8 @@ import numpy as np
 
 import config as cfg
 from utils.state import get_state, log, set_state, signal_q, stop_event, trading_halted, update_state
+from vision.gate import evaluate_vision_gate
+from vision.parser import normalize_timeframes
 
 try:
     import MetaTrader5 as mt5
@@ -184,6 +186,7 @@ class ExecutorWorker(threading.Thread):
         super().__init__(name="ExecutorWorker", daemon=True)
         self._daily_reset_date = date.today()
         self._demo_positions = []
+        self._vision_timeframes = normalize_timeframes(getattr(cfg, "VISION_TIMEFRAMES", []))
 
     def _daily_reset_if_needed(self):
         today = date.today()
@@ -275,10 +278,24 @@ class ExecutorWorker(threading.Thread):
             close = signal["close"]
             conf = signal["p_bull"] if direction == 1 else signal["p_bear"]
 
+            vision_gate = evaluate_vision_gate(
+                direction=direction,
+                configured_timeframes=self._vision_timeframes,
+                vision_signals=get_state("vision_signals"),
+                connection_state=get_state("vision_connection_state"),
+                last_message_ts=get_state("vision_last_message_ts"),
+                max_age_seconds=float(getattr(cfg, "VISION_MAX_SIGNAL_AGE_SECONDS", 0)),
+                require_fresh_signal=bool(getattr(cfg, "VISION_REQUIRE_FRESH_SIGNAL", True)),
+            )
+            if not vision_gate["allowed"]:
+                log.info(f"[Executor] SKIP | vision gate blocked | {vision_gate['reason']}")
+                continue
+
             log.info(
                 f"[Executor] Executing signal | side={'LONG' if direction == 1 else 'SHORT'} | "
                 f"conf={conf:.3f} | price~={close:.5f} | ATR={atr:.5f} | "
-                f"SLxATR={cfg.SL_MULT:.2f} TPxATR={cfg.TP_MULT:.2f}"
+                f"SLxATR={cfg.SL_MULT:.2f} TPxATR={cfg.TP_MULT:.2f} | "
+                f"vision={vision_gate['reason']}"
             )
 
             result = _place_order(direction, atr)

@@ -17,6 +17,7 @@ from workers.executor_worker import ExecutorWorker
 from workers.feature_worker import FeatureWorker
 from workers.monitor_worker import MonitorWorker
 from workers.predict_worker import PredictWorker
+from workers.vision_worker import VisionSignalWorker
 
 
 def _handle_signal(signum, frame):
@@ -35,6 +36,7 @@ def _render_banner() -> str:
         " MARKET STRUCTURE XGBOOST - LIVE TRADING SYSTEM\n"
         f" Symbol: {cfg.MT5_SYMBOL}\n"
         f" Timeframe: {cfg.MT5_TIMEFRAME}\n"
+        f" Vision TFs: {', '.join(getattr(cfg, 'VISION_TIMEFRAMES', []))}\n"
         "=================================================================\n"
     )
 
@@ -47,6 +49,7 @@ def main():
         DataWorker(),
         FeatureWorker(),
         PredictWorker(),
+        VisionSignalWorker(),
         ExecutorWorker(),
         MonitorWorker(),
     ]
