@@ -10,15 +10,15 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent
 MODELS_DIR = BASE_DIR / "models"
-MODEL_PATH = MODELS_DIR / "xgboost_base_model_20260418_231905.pkl"  # Saved XGBoost model (joblib pickle)
+MODEL_PATH = MODELS_DIR / "xgboost_base_model_20260419_180530.pkl"  # Saved XGBoost model (joblib pickle)
 FEAT_COLS_PATH = BASE_DIR / "feature_columns.json"   # saved column order
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MT5 CONNECTION
 # ─────────────────────────────────────────────────────────────────────────────
-MT5_SYMBOL   = "Volatility 100 (1s) Index.0" # Symbol for Deriv Synthetic Index
-MT5_TIMEFRAME = "M5"             # Primary timeframe (M1 = 1-minute)
-MT5_HTF       = "M5"            # Higher timeframe for EMA bias
+MT5_SYMBOL   = "Volatility 100 (1s) Index" # Symbol for Deriv Synthetic Index
+MT5_TIMEFRAME = "M1"             # Primary timeframe (M1 = 1-minute)
+MT5_HTF       = "M30"            # Higher timeframe for EMA bias
 MT5_BARS      = 1500              # Bars to fetch for feature warm-up
 MT5_HTF_BARS  = 1500              # HTF bars
 
@@ -38,7 +38,8 @@ MA_PERIODS   = [3, 5, 8, 13, 21, 34, 55]
 # ─────────────────────────────────────────────────────────────────────────────
 #  MODEL / SIGNAL
 # ─────────────────────────────────────────────────────────────────────────────
-PROB_THRESHOLD  = 0.4   # Minimum class probability to enter a trade
+PROB_THRESHOLD  = 0.4   # Used only when SIGNAL_MODE="threshold"
+SIGNAL_MODE     = "lead_class"  # "lead_class" or "threshold"
 SIGNAL_COOLDOWN = 60    # Seconds to wait after a trade before signalling again
 
 # ─────────────────────────────────────────────────────────────────────────────

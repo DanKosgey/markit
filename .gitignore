@@ -40,3 +40,7 @@ backtest_trades.csv
 backtest_analysis.png
 temp/
 tmp/
+.codex_tmp/
+localtmp/
+.venv/
+.venv313/

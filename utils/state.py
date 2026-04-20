@@ -12,6 +12,24 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _configure_console_streams() -> None:
+    """
+    Windows PowerShell often defaults to cp1252, which breaks when the bot
+    prints banners or log lines containing box-drawing characters.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
+_configure_console_streams()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  LOGGING
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +55,7 @@ def setup_logger(name: str = "BOT") -> logging.Logger:
         logger.addHandler(ch)
 
         # File handler (DEBUG level)
-        fh = logging.FileHandler(log_file)
+        fh = logging.FileHandler(log_file, encoding="utf-8")
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(fmt)
         logger.addHandler(fh)
@@ -77,6 +95,8 @@ _state = {
     "open_positions":     0,
     "last_signal_ts":     0.0,    # epoch seconds of last signal fired
     "last_bar_ts":        None,   # datetime of last processed bar
+    "mt5_live":           False,
+    "runtime_symbol":     None,
     "account_balance":    0.0,
     "peak_balance":       0.0,
     "total_trades":       0,
