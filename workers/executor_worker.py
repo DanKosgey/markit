@@ -83,6 +83,22 @@ def _get_demo_tick() -> dict:
     }
 
 
+def _format_signal_map(signals: dict | None) -> str:
+    if not signals:
+        return "none"
+    parts = []
+    for timeframe in sorted(signals):
+        entry = signals.get(timeframe) or {}
+        signal = entry.get("signal") or "unknown"
+        source = entry.get("source") or "n/a"
+        confidence = entry.get("confidence")
+        if confidence is None:
+            parts.append(f"{timeframe}={signal}@{source}")
+        else:
+            parts.append(f"{timeframe}={signal}({float(confidence):.2f})@{source}")
+    return ", ".join(parts)
+
+
 def _place_order(direction: int, atr: float) -> dict | None:
     if not _is_live_mt5():
         tick = _get_demo_tick()
@@ -195,7 +211,7 @@ class ExecutorWorker(threading.Thread):
             set_state("daily_pnl_usd", 0.0)
             log.info("[Executor] Daily PnL counter reset.")
 
-    def _check_risk(self) -> bool:
+    def _check_risk(self) -> tuple[bool, str]:
         daily_pnl = get_state("daily_pnl_usd")
         if daily_pnl <= -cfg.MAX_DAILY_LOSS_USD:
             if not trading_halted.is_set():
@@ -203,7 +219,7 @@ class ExecutorWorker(threading.Thread):
                 log.warning(
                     f"[Executor] Daily loss limit hit | {daily_pnl:.2f} <= -{cfg.MAX_DAILY_LOSS_USD:.2f}"
                 )
-            return False
+            return False, f"daily loss limit hit ({daily_pnl:.2f})"
 
         balance = get_state("account_balance")
         peak = get_state("peak_balance")
@@ -211,15 +227,14 @@ class ExecutorWorker(threading.Thread):
             if not trading_halted.is_set():
                 trading_halted.set()
                 log.warning(f"[Executor] Max drawdown {cfg.MAX_DRAWDOWN_PCT * 100:.0f}% hit.")
-            return False
+            return False, f"max drawdown hit ({cfg.MAX_DRAWDOWN_PCT * 100:.0f}%)"
 
         n_open = len(_get_open_positions()) if _is_live_mt5() else len(self._demo_positions)
         set_state("open_positions", n_open)
         if n_open >= cfg.MAX_OPEN_TRADES:
-            log.info(f"[Executor] SKIP | max open trades reached ({cfg.MAX_OPEN_TRADES})")
-            return False
+            return False, f"max open trades reached ({n_open}/{cfg.MAX_OPEN_TRADES})"
 
-        return True
+        return True, ""
 
     def _settle_demo_positions(self, current_price: float):
         remaining = []
@@ -266,36 +281,68 @@ class ExecutorWorker(threading.Thread):
             except Exception:
                 continue
 
-            if trading_halted.is_set():
-                log.info("[Executor] SKIP | trading halted.")
-                continue
-
-            if not self._check_risk():
-                continue
-
             direction = signal["direction"]
             atr = signal["atr"]
             close = signal["close"]
             conf = signal["p_bull"] if direction == 1 else signal["p_bear"]
+            model_summary = (
+                f"Bear={signal['p_bear']:.1%} Neut={signal['p_neut']:.1%} Bull={signal['p_bull']:.1%} | "
+                f"lead={signal.get('lead_class', 'n/a')} ({signal.get('lead_confidence', 0.0):.1%})"
+            )
+            current_vision_signals = get_state("vision_signals")
+            last_nonempty_vision_signals = get_state("vision_last_nonempty_signals")
+            vision_state = get_state("vision_connection_state")
+            vision_action = get_state("vision_decision_action") or "none"
+            vision_reason = get_state("vision_decision_reason") or "n/a"
+            vision_context = (
+                f"state={vision_state} | action={vision_action} | current={_format_signal_map(current_vision_signals)} | "
+                f"last_nonempty={_format_signal_map(last_nonempty_vision_signals)} | "
+                f"reason={vision_reason}"
+            )
+
+            if trading_halted.is_set():
+                log.info(
+                    f"[Executor] DECISION=SKIP | side={'LONG' if direction == 1 else 'SHORT'} | "
+                    f"model={model_summary} | vision={vision_context} | risk=trading halted"
+                )
+                continue
+
+            risk_allowed, risk_reason = self._check_risk()
+            if not risk_allowed:
+                log.info(
+                    f"[Executor] DECISION=SKIP | side={'LONG' if direction == 1 else 'SHORT'} | "
+                    f"model={model_summary} | vision={vision_context} | risk={risk_reason}"
+                )
+                continue
 
             vision_gate = evaluate_vision_gate(
                 direction=direction,
                 configured_timeframes=self._vision_timeframes,
-                vision_signals=get_state("vision_signals"),
-                connection_state=get_state("vision_connection_state"),
+                vision_signals=current_vision_signals,
+                last_nonempty_signals=last_nonempty_vision_signals,
+                connection_state=vision_state,
                 last_message_ts=get_state("vision_last_message_ts"),
+                last_nonempty_message_ts=get_state("vision_last_nonempty_message_ts"),
                 max_age_seconds=float(getattr(cfg, "VISION_MAX_SIGNAL_AGE_SECONDS", 0)),
                 require_fresh_signal=bool(getattr(cfg, "VISION_REQUIRE_FRESH_SIGNAL", True)),
             )
+            vision_context = (
+                f"state={vision_state} | action={vision_action} | current={_format_signal_map(current_vision_signals)} | "
+                f"last_nonempty={_format_signal_map(last_nonempty_vision_signals)} | "
+                f"source={vision_gate.get('signal_source', 'n/a')} | reason={vision_reason}"
+            )
             if not vision_gate["allowed"]:
-                log.info(f"[Executor] SKIP | vision gate blocked | {vision_gate['reason']}")
+                log.info(
+                    f"[Executor] DECISION=SKIP | side={'LONG' if direction == 1 else 'SHORT'} | "
+                    f"model={model_summary} | vision={vision_context} | gate={vision_gate['reason']}"
+                )
                 continue
 
             log.info(
-                f"[Executor] Executing signal | side={'LONG' if direction == 1 else 'SHORT'} | "
-                f"conf={conf:.3f} | price~={close:.5f} | ATR={atr:.5f} | "
-                f"SLxATR={cfg.SL_MULT:.2f} TPxATR={cfg.TP_MULT:.2f} | "
-                f"vision={vision_gate['reason']}"
+                f"[Executor] DECISION=EXECUTE | side={'LONG' if direction == 1 else 'SHORT'} | "
+                f"model={model_summary} | conf={conf:.3f} | price~={close:.5f} | ATR={atr:.5f} | "
+                f"vision={vision_context} | gate={vision_gate['reason']} | "
+                f"SLxATR={cfg.SL_MULT:.2f} TPxATR={cfg.TP_MULT:.2f}"
             )
 
             result = _place_order(direction, atr)

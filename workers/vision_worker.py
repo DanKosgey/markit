@@ -23,6 +23,7 @@ except ImportError:
 class VisionSignalWorker(threading.Thread):
     def __init__(self):
         super().__init__(name="VisionSignalWorker", daemon=True)
+        self.required_for_runtime = False
         self._timeframes = normalize_timeframes(getattr(cfg, "VISION_TIMEFRAMES", []))
         self._htf_timeframes = [cfg.MT5_HTF] if str(cfg.MT5_HTF).upper() in self._timeframes else []
         self._last_logged_signals: dict[str, str] = {}
@@ -53,6 +54,38 @@ class VisionSignalWorker(threading.Thread):
         if action != self._last_logged_action:
             log.info(f"[VisionWorker] Decision action transition | {self._last_logged_action or 'none'} -> {action or 'none'}")
             self._last_logged_action = action
+
+    @staticmethod
+    def _format_signal_snapshot(signals: dict[str, dict] | None) -> str:
+        if not signals:
+            return "none"
+
+        parts = []
+        for timeframe in sorted(signals):
+            entry = signals.get(timeframe) or {}
+            signal = entry.get("signal") or "unknown"
+            source = entry.get("source") or "n/a"
+            confidence = entry.get("confidence")
+            if confidence is None:
+                parts.append(f"{timeframe}={signal}@{source}")
+            else:
+                parts.append(f"{timeframe}={signal}({float(confidence):.2f})@{source}")
+        return ", ".join(parts)
+
+    def _log_snapshot_summary(self, snapshot: dict):
+        signals = snapshot.get("signals") or {}
+        action = snapshot.get("decision_action") or "none"
+        reason = snapshot.get("decision_reason") or "n/a"
+        summary = (
+            f"[VisionWorker] LIVE | action={action} | "
+            f"signals={self._format_signal_snapshot(signals)} | "
+            f"reason={reason}"
+        )
+
+        if signals or action != "none":
+            log.info(summary)
+        else:
+            log.debug(summary)
 
     def run(self):
         if not getattr(cfg, "VISION_ENABLED", True):
@@ -113,6 +146,15 @@ class VisionSignalWorker(threading.Thread):
                         vision_signals=snapshot.get("signals") or {},
                     )
 
+                    if snapshot.get("signals"):
+                        self._update_connection_state(
+                            "connected",
+                            vision_last_nonempty_message_ts=received_at_ts,
+                            vision_last_nonempty_published_at=snapshot.get("published_at"),
+                            vision_last_nonempty_signals=snapshot.get("signals") or {},
+                        )
+
+                    self._log_snapshot_summary(snapshot)
                     self._log_transitions(snapshot)
                     log.debug(
                         f"[VisionWorker] Snapshot received | event_id={snapshot.get('event_id')} | "

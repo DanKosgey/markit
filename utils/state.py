@@ -105,12 +105,15 @@ _state = {
     "vision_connection_state": "disconnected",
     "vision_last_event_id": None,
     "vision_last_message_ts": 0.0,
+    "vision_last_nonempty_message_ts": 0.0,
     "vision_last_published_at": None,
+    "vision_last_nonempty_published_at": None,
     "vision_cycle_id": None,
     "vision_symbol": None,
     "vision_decision_action": None,
     "vision_decision_reason": None,
     "vision_signals": {},
+    "vision_last_nonempty_signals": {},
 }
 
 

@@ -7,6 +7,7 @@ signals onto signal_q.
 
 import threading
 import time
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -24,8 +25,32 @@ class PredictWorker(threading.Thread):
         super().__init__(name="PredictWorker", daemon=True)
         self.model = None
 
+    @staticmethod
+    def _resolve_model_path() -> Path | None:
+        configured_path = Path(cfg.MODEL_PATH)
+        if configured_path.exists():
+            return configured_path
+
+        candidate_dirs = [Path(cfg.MODELS_DIR), Path(cfg.MODELS_DIR) / "backup"]
+        candidates = []
+        for directory in candidate_dirs:
+            if not directory.exists():
+                continue
+            candidates.extend(directory.glob("xgboost_base_model_*.pkl"))
+
+        if not candidates:
+            return None
+
+        fallback_path = max(candidates, key=lambda path: path.stat().st_mtime)
+        log.warning(
+            f"[PredictWorker] Configured model missing at {configured_path}. "
+            f"Falling back to latest available model: {fallback_path}"
+        )
+        return fallback_path
+
     def _load_model(self) -> bool:
-        if not cfg.MODEL_PATH.exists():
+        model_path = self._resolve_model_path()
+        if model_path is None:
             log.error(
                 f"[PredictWorker] Model not found at {cfg.MODEL_PATH}. "
                 "Run the notebook to train and save the model."
@@ -33,8 +58,8 @@ class PredictWorker(threading.Thread):
             return False
 
         try:
-            self.model = joblib.load(str(cfg.MODEL_PATH))
-            log.info(f"[PredictWorker] Model loaded from {cfg.MODEL_PATH}")
+            self.model = joblib.load(str(model_path))
+            log.info(f"[PredictWorker] Model loaded from {model_path}")
             return True
         except Exception as exc:
             log.error(f"[PredictWorker] Failed to load model: {exc}")
@@ -139,6 +164,8 @@ class PredictWorker(threading.Thread):
                     "p_bull": p_bull,
                     "p_bear": p_bear,
                     "p_neut": p_neut,
+                    "lead_class": lead_cls,
+                    "lead_confidence": conf,
                     "atr": atr,
                     "close": close,
                     "rsi": rsi,

@@ -3,6 +3,7 @@ workers/monitor_worker.py - Position Monitor and Dashboard Worker.
 """
 
 import threading
+import time
 from datetime import datetime, timedelta
 
 import config as cfg
@@ -18,6 +19,18 @@ except ImportError:
 _SEPARATOR = "-" * 65
 
 
+def _format_vision_signals(signals: dict | None) -> str:
+    if not signals:
+        return "none"
+    parts = []
+    for timeframe in sorted(signals):
+        entry = signals.get(timeframe) or {}
+        signal = entry.get("signal") or "unknown"
+        source = entry.get("source") or "n/a"
+        parts.append(f"{timeframe}={signal}@{source}")
+    return ", ".join(parts)
+
+
 def _format_dashboard(state: dict) -> str:
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     status = "HALTED" if trading_halted.is_set() else "ACTIVE"
@@ -27,6 +40,12 @@ def _format_dashboard(state: dict) -> str:
     wins = state["total_wins"]
     losses = state["total_losses"]
     win_rate = f"{wins / total * 100:.1f}%" if total else "n/a"
+    vision_state = state.get("vision_connection_state") or "unknown"
+    vision_action = state.get("vision_decision_action") or "none"
+    vision_age_seconds = None
+    if state.get("vision_last_message_ts"):
+        vision_age_seconds = max(0.0, time.time() - float(state["vision_last_message_ts"]))
+    vision_age_text = "n/a" if vision_age_seconds is None else f"{vision_age_seconds:.1f}s"
 
     return (
         f"\n{_SEPARATOR}\n"
@@ -41,6 +60,9 @@ def _format_dashboard(state: dict) -> str:
         f"  Total Trades   : {total}  Wins: {wins}  Losses: {losses}  WR: {win_rate}\n"
         f"  Signal Mode    : {getattr(cfg, 'SIGNAL_MODE', 'threshold')}  "
         f"Threshold: {cfg.PROB_THRESHOLD}\n"
+        f"  Vision State   : {vision_state}  Action: {vision_action}  Age: {vision_age_text}\n"
+        f"  Vision Current : {_format_vision_signals(state.get('vision_signals'))}\n"
+        f"  Vision Last OK : {_format_vision_signals(state.get('vision_last_nonempty_signals'))}\n"
         f"  SLxATR         : {cfg.SL_MULT}  TPxATR: {cfg.TP_MULT}\n"
         f"{_SEPARATOR}"
     )

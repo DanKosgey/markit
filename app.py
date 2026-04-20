@@ -59,12 +59,24 @@ def main():
         log.info(f"  -> {worker.name} started (thread id={worker.ident})")
 
     log.info("All workers running. Press Ctrl+C to stop.\n")
+    optional_stopped = set()
 
     try:
         while not stop_event.is_set():
-            dead_workers = [worker.name for worker in workers if not worker.is_alive()]
-            if dead_workers:
-                log.error(f"Workers unexpectedly stopped: {dead_workers}. Shutting down.")
+            dead_workers = [worker for worker in workers if not worker.is_alive()]
+            dead_required = [worker.name for worker in dead_workers if getattr(worker, "required_for_runtime", True)]
+            dead_optional = [
+                worker.name
+                for worker in dead_workers
+                if not getattr(worker, "required_for_runtime", True) and worker.name not in optional_stopped
+            ]
+
+            if dead_optional:
+                optional_stopped.update(dead_optional)
+                log.warning(f"Optional workers stopped: {dead_optional}. Core runtime will continue.")
+
+            if dead_required:
+                log.error(f"Workers unexpectedly stopped: {dead_required}. Shutting down.")
                 stop_event.set()
                 break
             time.sleep(5)
